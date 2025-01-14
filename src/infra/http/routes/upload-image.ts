@@ -1,3 +1,5 @@
+import { uploadImage } from '@/app/functions/upload-image'
+import { isRight, unwrapEither } from '@/shared/either'
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 
@@ -7,12 +9,9 @@ export const uploadImageRoute: FastifyPluginAsyncZod = async server => {
     {
       schema: {
         summary: 'Upload an image',
-        body: z.object({
-          name: z.string(),
-          password: z.string().optional(),
-        }),
+        consumes: ['multipart/form-data'],
         response: {
-          201: z.object({ uploadId: z.string() }),
+          201: z.null().describe('Upload successful.'),
           400: z
             .object({ message: z.string() })
             .describe('Upload already exists.'),
@@ -20,7 +19,42 @@ export const uploadImageRoute: FastifyPluginAsyncZod = async server => {
       },
     },
     async (request, reply) => {
-      return reply.status(201).send({ uploadId: '123' })
+      const uploadedFile = await request.file({
+        limits: {
+          fileSize: 2 * 1024 * 1024, // 2MB
+        },
+      })
+
+      if (!uploadedFile) {
+        return reply.status(400).send({ message: 'No file uploaded' })
+      }
+
+      const result = await uploadImage({
+        fileName: uploadedFile.filename,
+        contentType: uploadedFile.mimetype,
+        contentStream: uploadedFile.file,
+      })
+
+      if (uploadedFile.file.truncated) {
+        return reply.status(400).send({ message: 'File size limit reached.' })
+      }
+
+      if (isRight(result)) {
+        const { url } = unwrapEither(result)
+
+        console.log(url)
+
+        return reply.status(201).send()
+      }
+
+      const error = unwrapEither(result)
+
+      switch (error.constructor.name) {
+        case 'InvalidFileFormatError':
+          return reply.status(400).send({ message: error.message })
+        default:
+          return reply.status(500).send({ message: 'Internal server error' })
+      }
     }
   )
 }
