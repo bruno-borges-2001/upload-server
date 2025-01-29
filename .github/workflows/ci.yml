@@ -42,7 +42,7 @@ jobs:
           version: 8
       - name: Install dependencies
         run: |
-          pnpm install --frozen-lockfile
+          pnpm install
       - run: pnpm run test
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
