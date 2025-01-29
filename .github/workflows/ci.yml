@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           pnpm install
-      - run: pnpm run test
+      - run: pnpm run pretest && pnpm run test
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
