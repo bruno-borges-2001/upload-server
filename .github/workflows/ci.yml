@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: docker
+          POSTGRES_PASSWORD: docker
+          POSTGRES_DB: upload_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+      - run: pnpm run test
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Generate image tag
+        id: generate-image-tag
+        run: |
+          SHA=$(echo $GITHUB_SHA | head -c7)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+      - name: Build and push image to AWS ECR
+        env:
+          IMAGE_TAG: ${{ steps.generate-image-tag.outputs.sha }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
